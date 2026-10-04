@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>EvidenceChain</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🔐 EvidenceChain</h1>
+
+    <p class="subtitle">
+        Blockchain-Based Digital Evidence Integrity
+        & Chain-of-Custody Verification
+    </p>
+
+
+    <!-- Register Evidence -->
+
+    <div class="card">
+
+        <h2>📁 Register Evidence</h2>
+
+        <form
+            action="/register"
+            method="POST"
+            enctype="multipart/form-data"
+        >
+
+            <input
+                type="text"
+                name="evidence_id"
+                placeholder="Evidence ID (e.g. EV001)"
+                required
+            >
+
+            <input
+                type="text"
+                name="actor"
+                placeholder="Submitted By"
+                required
+            >
+
+            <input
+                type="file"
+                name="evidence"
+                required
+            >
+
+            <button type="submit">
+                Register Evidence
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- Verify Evidence -->
+
+    <div class="card">
+
+        <h2>🔍 Verify Evidence</h2>
+
+        <form
+            action="/verify"
+            method="POST"
+            enctype="multipart/form-data"
+        >
+
+            <input
+                type="file"
+                name="evidence"
+                required
+            >
+
+            <button type="submit">
+                Verify Evidence
+            </button>
+
+        </form>
+
+    </div>
+
+
+    {% if result %}
+
+    <div class="result
+        {% if result.status == 'VALID' %}
+            valid
+        {% else %}
+            tampered
+        {% endif %}
+    ">
+
+        {% if result.status == "VALID" %}
+
+            <h2>✅ Evidence Verified</h2>
+
+        {% else %}
+
+            <h2>🚨 Evidence Integrity Failed</h2>
+
+        {% endif %}
+
+        <p>{{ result.message }}</p>
+
+    </div>
+
+    {% endif %}
+
+
+    <!-- Blockchain Status -->
+
+    <div class="card">
+
+        <h2>⛓️ Blockchain Status</h2>
+
+        {% if valid %}
+
+            <p class="success">
+                ✅ Blockchain Integrity: VALID
+            </p>
+
+        {% else %}
+
+            <p class="danger">
+                🚨 Blockchain Integrity: COMPROMISED
+            </p>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- Blockchain Explorer -->
+
+    <div class="card">
+
+        <h2>🔗 Blockchain Explorer</h2>
+
+        {% for block in chain %}
+
+        <div class="block">
+
+            <h3>Block #{{ block.index }}</h3>
+
+            <p>
+                <strong>Evidence ID:</strong>
+                {{ block.evidence_id }}
+            </p>
+
+            <p>
+                <strong>Action:</strong>
+                {{ block.action }}
+            </p>
+
+            <p>
+                <strong>Actor:</strong>
+                {{ block.actor }}
+            </p>
+
+            <p>
+                <strong>Timestamp:</strong>
+                {{ block.timestamp }}
+            </p>
+
+            <p>
+                <strong>Evidence Hash:</strong>
+                {{ block.evidence_hash }}
+            </p>
+
+            <p>
+                <strong>Previous Hash:</strong>
+                {{ block.previous_hash }}
+            </p>
+
+            <p>
+                <strong>Block Hash:</strong>
+                {{ block.hash }}
+            </p>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
