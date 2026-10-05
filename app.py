@@ -8,10 +8,6 @@ from blockchain import Blockchain
 app = Flask(__name__)
 
 
-# ==================================================
-# Configuration
-# ==================================================
-
 UPLOAD_FOLDER = "uploads"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,16 +15,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 
-# ==================================================
-# Create Blockchain
-# ==================================================
-
 blockchain = Blockchain()
 
-
-# ==================================================
-# Calculate SHA-256 File Hash
-# ==================================================
 
 def calculate_file_hash(file_path):
 
@@ -48,10 +36,6 @@ def calculate_file_hash(file_path):
     return sha256.hexdigest()
 
 
-# ==================================================
-# Home Page
-# ==================================================
-
 @app.route("/")
 def home():
 
@@ -63,28 +47,21 @@ def home():
     )
 
 
-# ==================================================
-# Register Evidence
-# ==================================================
+# -----------------------------------------
+# REGISTER EVIDENCE
+# -----------------------------------------
 
 @app.route("/register", methods=["POST"])
 def register():
 
-    evidence_id = request.form["evidence_id"]
+    evidence_id = request.form["evidence_id"].strip()
 
-    actor = request.form["actor"]
+    actor = request.form["actor"].strip()
 
     evidence_file = request.files["evidence"]
 
-
-    # Check file
     if evidence_file.filename == "":
         return redirect(url_for("home"))
-
-
-    # --------------------------------------------------
-    # Save Evidence File
-    # --------------------------------------------------
 
     filename = evidence_file.filename
 
@@ -95,17 +72,7 @@ def register():
 
     evidence_file.save(filepath)
 
-
-    # --------------------------------------------------
-    # Calculate SHA-256
-    # --------------------------------------------------
-
     file_hash = calculate_file_hash(filepath)
-
-
-    # --------------------------------------------------
-    # Add Evidence to Blockchain
-    # --------------------------------------------------
 
     blockchain.add_block(
         evidence_id=evidence_id,
@@ -114,28 +81,22 @@ def register():
         evidence_hash=file_hash
     )
 
-
     return redirect(url_for("home"))
 
 
-# ==================================================
-# Verify Evidence
-# ==================================================
+# -----------------------------------------
+# VERIFY EVIDENCE
+# -----------------------------------------
 
 @app.route("/verify", methods=["POST"])
 def verify():
 
+    evidence_id = request.form["evidence_id"].strip()
+
     evidence_file = request.files["evidence"]
 
-
-    # Check file
     if evidence_file.filename == "":
         return redirect(url_for("home"))
-
-
-    # --------------------------------------------------
-    # Save Temporary File
-    # --------------------------------------------------
 
     temp_filename = "verification_" + evidence_file.filename
 
@@ -146,63 +107,63 @@ def verify():
 
     evidence_file.save(temp_path)
 
-
-    # --------------------------------------------------
-    # Calculate Uploaded File Hash
-    # --------------------------------------------------
-
     uploaded_hash = calculate_file_hash(temp_path)
 
-
-    # Delete temporary file
     os.remove(temp_path)
-
-
-    # --------------------------------------------------
-    # Search Blockchain
-    # --------------------------------------------------
 
     matched_block = None
 
     for block in blockchain.chain:
 
-        if block.evidence_hash == uploaded_hash:
+        if (
+            block.evidence_id == evidence_id
+            and block.action == "REGISTERED"
+        ):
 
             matched_block = block
 
             break
 
-
-    # --------------------------------------------------
-    # Verification Result
-    # --------------------------------------------------
-
     if matched_block:
 
-        result = {
+        if matched_block.evidence_hash == uploaded_hash:
 
-            "status": "VALID",
+            result = {
 
-            "message":
-            "Evidence is authentic. File content matches the blockchain record.",
+                "status": "VALID",
 
-            "block": matched_block
+                "message":
+                "Evidence is authentic. File content matches the blockchain record.",
 
-        }
+                "block": matched_block
+
+            }
+
+        else:
+
+            result = {
+
+                "status": "TAMPERED",
+
+                "message":
+                "Evidence ID exists, but the uploaded file has been modified.",
+
+                "block": matched_block
+
+            }
 
     else:
 
         result = {
 
-            "status": "TAMPERED",
+            "status": "NOT_FOUND",
 
             "message":
-            "Evidence does not match any registered blockchain record.",
+            "No blockchain record was found for this Evidence ID.",
 
             "block": None
 
         }
-
 
     return render_template(
 
@@ -217,9 +178,92 @@ def verify():
     )
 
 
-# ==================================================
-# Validate Blockchain
-# ==================================================
+# -----------------------------------------
+# CHAIN OF CUSTODY
+# -----------------------------------------
+
+@app.route("/custody", methods=["POST"])
+def custody():
+
+    evidence_id = request.form["evidence_id"].strip()
+
+    action = request.form["action"].strip()
+
+    actor = request.form["actor"].strip()
+
+    allowed_actions = [
+        "TRANSFERRED",
+        "RECEIVED",
+        "VERIFIED"
+    ]
+
+    if action not in allowed_actions:
+
+        return redirect(url_for("home"))
+
+    evidence_exists = False
+
+    for block in blockchain.chain:
+
+        if (
+            block.evidence_id == evidence_id
+            and block.action == "REGISTERED"
+        ):
+
+            evidence_exists = True
+            break
+
+    if not evidence_exists:
+
+        result = {
+
+            "status": "NOT_FOUND",
+
+            "message":
+            "No registered evidence was found for this Evidence ID.",
+
+            "block": None
+
+        }
+
+        return render_template(
+
+            "index.html",
+
+            chain=blockchain.chain,
+
+            valid=blockchain.is_valid(),
+
+            result=result
+
+        )
+
+    latest_evidence_hash = None
+
+    for block in blockchain.chain:
+
+        if block.evidence_id == evidence_id:
+
+            latest_evidence_hash = block.evidence_hash
+
+    blockchain.add_block(
+
+        evidence_id=evidence_id,
+
+        action=action,
+
+        actor=actor,
+
+        evidence_hash=latest_evidence_hash
+
+    )
+
+    return redirect(url_for("home"))
+
+
+# -----------------------------------------
+# BLOCKCHAIN VALIDATION
+# -----------------------------------------
 
 @app.route("/validate")
 def validate():
@@ -237,9 +281,9 @@ def validate():
     )
 
 
-# ==================================================
-# Start Application
-# ==================================================
+# -----------------------------------------
+# RUN APPLICATION
+# -----------------------------------------
 
 if __name__ == "__main__":
 
@@ -247,19 +291,16 @@ if __name__ == "__main__":
 
     from threading import Timer
 
-
     def open_browser():
 
         webbrowser.open_new(
             "http://127.0.0.1:5000"
         )
 
-
     Timer(
         1,
         open_browser
     ).start()
-
 
     app.run(
         debug=True,

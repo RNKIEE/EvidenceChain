@@ -82,3 +82,14 @@ button {
 .tampered {
     background: #ffe8e8;
 }
+
+
+select {
+    display: block;
+    width: 98%;
+    padding: 12px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: white;
+}

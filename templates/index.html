@@ -78,6 +78,13 @@
         >
 
             <input
+                type="text"
+                name="evidence_id"
+                placeholder="Evidence ID (e.g. EV001)"
+                required
+            >
+
+            <input
                 type="file"
                 name="evidence"
                 required
@@ -92,13 +99,79 @@
     </div>
 
 
+    <!-- Chain of Custody -->
+
+    <div class="card">
+
+        <h2>🔄 Chain of Custody</h2>
+
+        <p>
+            Record every transfer, receipt, and verification
+            of an evidence item.
+        </p>
+
+        <form
+            action="/custody"
+            method="POST"
+        >
+
+            <input
+                type="text"
+                name="evidence_id"
+                placeholder="Evidence ID (e.g. EV001)"
+                required
+            >
+
+            <select
+                name="action"
+                required
+            >
+
+                <option value="">
+                    Select Custody Action
+                </option>
+
+                <option value="TRANSFERRED">
+                    Transferred
+                </option>
+
+                <option value="RECEIVED">
+                    Received
+                </option>
+
+                <option value="VERIFIED">
+                    Verified
+                </option>
+
+            </select>
+
+            <input
+                type="text"
+                name="actor"
+                placeholder="Handled By"
+                required
+            >
+
+            <button type="submit">
+                Record Custody Action
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- Verification Result -->
+
     {% if result %}
 
     <div class="result
         {% if result.status == 'VALID' %}
             valid
-        {% else %}
+        {% elif result.status == 'TAMPERED' %}
             tampered
+        {% else %}
+            not-found
         {% endif %}
     ">
 
@@ -106,13 +179,33 @@
 
             <h2>✅ Evidence Verified</h2>
 
-        {% else %}
+        {% elif result.status == "TAMPERED" %}
 
             <h2>🚨 Evidence Integrity Failed</h2>
 
+        {% else %}
+
+            <h2>❓ Evidence Not Found</h2>
+
         {% endif %}
 
-        <p>{{ result.message }}</p>
+        <p>
+            {{ result.message }}
+        </p>
+
+        {% if result.block %}
+
+        <p>
+            <strong>Evidence ID:</strong>
+            {{ result.block.evidence_id }}
+        </p>
+
+        <p>
+            <strong>Registered Hash:</strong>
+            {{ result.block.evidence_hash }}
+        </p>
+
+        {% endif %}
 
     </div>
 
@@ -152,7 +245,9 @@
 
         <div class="block">
 
-            <h3>Block #{{ block.index }}</h3>
+            <h3>
+                Block #{{ block.index }}
+            </h3>
 
             <p>
                 <strong>Evidence ID:</strong>
