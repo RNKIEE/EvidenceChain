@@ -3,6 +3,23 @@ import json
 import os
 from datetime import datetime
 
+import psycopg2
+
+
+# --------------------------------------------------
+# Database Connection
+# --------------------------------------------------
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def get_connection():
+
+    if not DATABASE_URL:
+        return None
+
+    return psycopg2.connect(DATABASE_URL)
+
 
 # --------------------------------------------------
 # Block
@@ -42,10 +59,6 @@ class Block:
             else self.calculate_hash()
         )
 
-    # --------------------------------------------------
-    # Calculate Block Hash
-    # --------------------------------------------------
-
     def calculate_hash(self):
 
         block_data = {
@@ -65,10 +78,6 @@ class Block:
 
         return hashlib.sha256(encoded_data).hexdigest()
 
-    # --------------------------------------------------
-    # Convert Block to Dictionary
-    # --------------------------------------------------
-
     def to_dict(self):
 
         return {
@@ -81,10 +90,6 @@ class Block:
             "previous_hash": self.previous_hash,
             "hash": self.hash
         }
-
-    # --------------------------------------------------
-    # Create Block from Dictionary
-    # --------------------------------------------------
 
     @staticmethod
     def from_dict(data):
@@ -111,24 +116,180 @@ class Blockchain:
 
         self.storage_file = storage_file
 
-        # Create data folder if it doesn't exist
-        os.makedirs(
-            os.path.dirname(self.storage_file),
-            exist_ok=True
-        )
+        # ------------------------------------------
+        # PostgreSQL mode
+        # ------------------------------------------
 
-        # Load existing blockchain
-        if os.path.exists(self.storage_file):
+        if DATABASE_URL:
 
-            self.load_chain()
+            self.use_database = True
+
+            self.setup_database()
+
+            self.load_from_database()
+
+            if not self.chain:
+
+                self.chain = [
+                    self.create_genesis_block()
+                ]
+
+                self.save_block_to_database(
+                    self.chain[0]
+                )
+
+        # ------------------------------------------
+        # JSON fallback mode
+        # ------------------------------------------
 
         else:
 
-            self.chain = [
-                self.create_genesis_block()
-            ]
+            self.use_database = False
 
-            self.save_chain()
+            os.makedirs(
+                os.path.dirname(self.storage_file),
+                exist_ok=True
+            )
+
+            if os.path.exists(self.storage_file):
+
+                self.load_chain()
+
+            else:
+
+                self.chain = [
+                    self.create_genesis_block()
+                ]
+
+                self.save_chain()
+
+    # --------------------------------------------------
+    # Database Setup
+    # --------------------------------------------------
+
+    def setup_database(self):
+
+        connection = get_connection()
+
+        try:
+
+            cursor = connection.cursor()
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS blockchain (
+                    id SERIAL PRIMARY KEY,
+                    block_index INTEGER UNIQUE NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    evidence_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    evidence_hash TEXT NOT NULL,
+                    previous_hash TEXT NOT NULL,
+                    block_hash TEXT NOT NULL
+                )
+            """)
+
+            connection.commit()
+
+            cursor.close()
+
+        finally:
+
+            connection.close()
+
+    # --------------------------------------------------
+    # Load Blockchain From Database
+    # --------------------------------------------------
+
+    def load_from_database(self):
+
+        connection = get_connection()
+
+        try:
+
+            cursor = connection.cursor()
+
+            cursor.execute("""
+                SELECT
+                    block_index,
+                    timestamp,
+                    evidence_id,
+                    action,
+                    actor,
+                    evidence_hash,
+                    previous_hash,
+                    block_hash
+                FROM blockchain
+                ORDER BY block_index
+            """)
+
+            rows = cursor.fetchall()
+
+            self.chain = []
+
+            for row in rows:
+
+                block = Block(
+                    index=row[0],
+                    timestamp=row[1],
+                    evidence_id=row[2],
+                    action=row[3],
+                    actor=row[4],
+                    evidence_hash=row[5],
+                    previous_hash=row[6],
+                    block_hash=row[7]
+                )
+
+                self.chain.append(block)
+
+            cursor.close()
+
+        finally:
+
+            connection.close()
+
+    # --------------------------------------------------
+    # Save Block To Database
+    # --------------------------------------------------
+
+    def save_block_to_database(self, block):
+
+        connection = get_connection()
+
+        try:
+
+            cursor = connection.cursor()
+
+            cursor.execute("""
+                INSERT INTO blockchain (
+                    block_index,
+                    timestamp,
+                    evidence_id,
+                    action,
+                    actor,
+                    evidence_hash,
+                    previous_hash,
+                    block_hash
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                block.index,
+                block.timestamp,
+                block.evidence_id,
+                block.action,
+                block.actor,
+                block.evidence_hash,
+                block.previous_hash,
+                block.hash
+            ))
+
+            connection.commit()
+
+            cursor.close()
+
+        finally:
+
+            connection.close()
 
     # --------------------------------------------------
     # Genesis Block
@@ -146,7 +307,7 @@ class Blockchain:
         )
 
     # --------------------------------------------------
-    # Get Latest Block
+    # Latest Block
     # --------------------------------------------------
 
     def get_latest_block(self):
@@ -154,7 +315,7 @@ class Blockchain:
         return self.chain[-1]
 
     # --------------------------------------------------
-    # Add New Block
+    # Add Block
     # --------------------------------------------------
 
     def add_block(
@@ -178,13 +339,20 @@ class Blockchain:
 
         self.chain.append(new_block)
 
-        # Save blockchain immediately
-        self.save_chain()
+        if self.use_database:
+
+            self.save_block_to_database(
+                new_block
+            )
+
+        else:
+
+            self.save_chain()
 
         return new_block
 
     # --------------------------------------------------
-    # Save Blockchain
+    # JSON Save
     # --------------------------------------------------
 
     def save_chain(self):
@@ -207,7 +375,7 @@ class Blockchain:
             )
 
     # --------------------------------------------------
-    # Load Blockchain
+    # JSON Load
     # --------------------------------------------------
 
     def load_chain(self):
@@ -227,10 +395,10 @@ class Blockchain:
                 for block in data
             ]
 
-        except (json.JSONDecodeError, KeyError):
-
-            # If file is corrupted,
-            # create a fresh blockchain
+        except (
+            json.JSONDecodeError,
+            KeyError
+        ):
 
             self.chain = [
                 self.create_genesis_block()
@@ -239,23 +407,24 @@ class Blockchain:
             self.save_chain()
 
     # --------------------------------------------------
-    # Validate Blockchain
+    # Blockchain Validation
     # --------------------------------------------------
 
     def is_valid(self):
 
-        for i in range(1, len(self.chain)):
+        for i in range(
+            1,
+            len(self.chain)
+        ):
 
             current = self.chain[i]
 
             previous = self.chain[i - 1]
 
-            # Check current block hash
             if current.hash != current.calculate_hash():
 
                 return False
 
-            # Check connection with previous block
             if current.previous_hash != previous.hash:
 
                 return False
